@@ -1,0 +1,386 @@
+USE MASTER;
+GO
+DROP DATABASE Project4;
+CREATE DATABASE Project4;
+GO
+USE Project4; 
+GO
+Alter database Project4 set single_user with rollback immediate;
+GO
+
+CREATE TABLE dbo.DimCities(
+	CityKey INT NOT NULL,
+	CityName NVARCHAR(50) NULL,
+	StateProvCode NVARCHAR(5) NULL,
+	StateProvName NVARCHAR(50) NULL,
+	CountryName NVARCHAR(60) NULL,
+	CountryFormalName NVARCHAR(60) NULL,
+    CONSTRAINT PK_DimCities PRIMARY KEY CLUSTERED ( CityKey )
+);
+CREATE TABLE dbo.DimCustomers(
+	CustomerKey INT NOT NULL,
+	CustomerName NVARCHAR(100) NULL,
+	CustomerCategoryName NVARCHAR(50) NULL,
+	DeliveryCityName NVARCHAR(50) NULL,
+	DeliveryStateProvCode NVARCHAR(5) NULL,
+	DeliveryCountryName NVARCHAR(50) NULL,
+	PostalCityName NVARCHAR(50) NULL,
+	PostalStateProvCode NVARCHAR(5) NULL,
+	PostalCountryName NVARCHAR(50) NULL,
+	StartDate DATE NOT NULL,
+	EndDate DATE NULL,
+    CONSTRAINT PK_DimCustomers PRIMARY KEY CLUSTERED ( CustomerKey )
+);
+CREATE TABLE dbo.DimProducts(
+	ProductKey INT NOT NULL,
+	ProductName NVARCHAR(100) NULL,
+	ProductColour NVARCHAR(20) NULL,
+	ProductBrand NVARCHAR(50) NULL,
+	ProductSize NVARCHAR(20) NULL,
+	StartDate DATE NOT NULL,
+	EndDate DATE NULL,
+    CONSTRAINT PK_DimProducts PRIMARY KEY CLUSTERED ( ProductKey )
+);
+CREATE TABLE dbo.DimSalesPeople(
+	SalespersonKey INT NOT NULL,
+	FullName NVARCHAR(50) NULL,
+	PreferredName NVARCHAR(50) NULL,
+	LogonName NVARCHAR(50) NULL,
+	PhoneNumber NVARCHAR(20) NULL,
+	FaxNumber NVARCHAR(20) NULL,
+	EmailAddress NVARCHAR(256) NULL,
+    CONSTRAINT PK_DimSalesPeople PRIMARY KEY CLUSTERED (SalespersonKey )
+);
+CREATE TABLE dbo.DimSuppliers(
+	SupplierKey INT NOT NULL,
+	FullName NVARCHAR(50) NULL,
+	SupplierCategoryName NVARCHAR(50) NULL,
+	PhoneNumber NVARCHAR(20) NULL,
+	FaxNumber NVARCHAR(20) NULL,
+	WebsiteURL NVARCHAR(70) NULL,
+	StartDate DATE NOT NULL,
+	EndDate DATE NULL
+	CONSTRAINT PK_DimSuppliers PRIMARY KEY CLUSTERED (SupplierKey )
+);
+CREATE TABLE dbo.DimDate(
+	DateKey INT NOT NULL,
+	DateValue DATE NOT NULL,
+	Year SMALLINT NOT NULL,
+	Month TINYINT NOT NULL,
+	Day TINYINT NOT NULL,
+	Quarter TINYINT NOT NULL,
+	StartOfMonth DATE NOT NULL,
+	EndOfMonth DATE NOT NULL,
+	MonthName VARCHAR(9) NOT NULL,
+	DayOfWeekName VARCHAR(9) NOT NULL,
+    CONSTRAINT PK_DimDate PRIMARY KEY CLUSTERED ( DateKey )
+);
+CREATE TABLE dbo.FactOrders(
+	CustomerKey INT NOT NULL,
+	CityKey INT NOT NULL,
+	ProductKey INT NOT NULL,
+	SalespersonKey INT NOT NULL,
+	SupplierKey INT NOT NULL,
+	DateKey INT NOT NULL,
+	Quantity INT NOT NULL,
+	UnitPrice DECIMAL(18, 2) NOT NULL,
+	TaxRate DECIMAL(18, 3) NOT NULL,
+	TotalBeforeTax DECIMAL(18, 2) NOT NULL,
+	TotalAfterTax DECIMAL(18, 2) NOT NULL,
+    CONSTRAINT FK_FactOrders_DimCities FOREIGN KEY(CityKey) REFERENCES dbo.DimCities (CityKey),
+    CONSTRAINT FK_FactOrders_DimCustomers FOREIGN KEY(CustomerKey) REFERENCES dbo.DimCustomers (CustomerKey),
+    CONSTRAINT FK_FactOrders_DimDate FOREIGN KEY(DateKey) REFERENCES dbo.DimDate (DateKey),
+    CONSTRAINT FK_FactOrders_DimProducts FOREIGN KEY(ProductKey) REFERENCES dbo.DimProducts (ProductKey),
+    CONSTRAINT FK_FactOrders_DimSalesPeople FOREIGN KEY(SalespersonKey) REFERENCES dbo.DimSalesPeople (SalespersonKey),
+	CONSTRAINT FK_FactOrders_DimSuppliers FOREIGN KEY(SupplierKey) REFERENCES dbo.DimSuppliers (SupplierKey)
+);
+CREATE INDEX IX_FactOrders_CustomerKey ON dbo.FactOrders(CustomerKey);
+CREATE INDEX IX_FactOrders_CityKey ON dbo.FactOrders(CityKey);
+CREATE INDEX IX_FactOrders_ProductKey ON dbo.FactOrders(ProductKey);
+CREATE INDEX IX_FactOrders_SalespersonKey ON dbo.FactOrders(SalespersonKey);
+CREATE INDEX IX_FactOrders_SupplierKey ON dbo.FactOrders(SupplierKey);
+CREATE INDEX IX_FactOrders_DateKey ON dbo.FactOrders(DateKey);
+GO
+
+
+/*Requirement-2*/
+CREATE PROCEDURE dbo.DimDate_Load 
+    @DateValue DATE
+AS
+BEGIN;
+    INSERT INTO dbo.DimDate
+    SELECT CAST( YEAR(@DateValue) * 10000 + MONTH(@DateValue) * 100 + DAY(@DateValue) AS INT),
+           @DateValue,
+           YEAR(@DateValue),
+           MONTH(@DateValue),
+           DAY(@DateValue),
+           DATEPART(qq,@DateValue),
+           DATEADD(DAY,1,EOMONTH(@DateValue,-1)),
+           EOMONTH(@DateValue),
+           DATENAME(mm,@DateValue),
+           DATENAME(dw,@DateValue);
+END
+GO
+
+/*Requirement 3*/
+SELECT 	DP.ProductName, DP.ProductColour, DP.ProductBrand,
+		DSP.FullName AS 'Employee Full Name',
+		DCS.CustomerName,
+		DS.FullName AS 'Supplier Full Name',
+		DC.CityName,
+		DD.DateValue
+	FROM
+		dbo.DimProducts DP INNER JOIN dbo.FactOrders FO
+			ON FO.ProductKey = DP.ProductKey
+			INNER JOIN dbo.DimCustomers DCS
+			ON DCS.CustomerKey = FO.CustomerKey
+			INNER JOIN dbo.DimCities DC
+			ON DC.CityKey = FO.CityKey
+			INNER JOIN dbo.DimSalesPeople DSP
+			ON FO.SalespersonKey = DSP.SalespersonKey
+			INNER JOIN dbo.DimSuppliers DS
+			ON FO.SupplierKey = DS.SupplierKey
+			INNER JOIN dbo.DimDate DD
+			ON FO.DateKey = DD.DateKey
+
+/*Requirement 4*/
+CREATE TABLE dbo.Customers_Stage (
+    CustomerName NVARCHAR(100),
+    CustomerCategoryName NVARCHAR(50),
+    DeliveryCityName NVARCHAR(50),
+    DeliveryStateProvinceCode NVARCHAR(5),
+    DeliveryStateProvinceName NVARCHAR(50),
+    DeliveryCountryName NVARCHAR(50),
+    DeliveryFormalName NVARCHAR(60),
+    PostalCityName NVARCHAR(50),
+    PostalStateProvinceCode NVARCHAR(5),
+    PostalStateProvinceName NVARCHAR(50),
+    PostalCountryName NVARCHAR(50),
+    PostalFormalName NVARCHAR(60)
+);
+CREATE TABLE dbo.Products_Stage(
+		ProductName NVARCHAR(100),
+        ProductBrand NVARCHAR(20),
+        ProductSize NVARCHAR(50),
+        ProductColour NVARCHAR(20)
+);
+CREATE TABLE dbo.Salesperson_Stage(
+		FullName NVARCHAR(50),
+        PreferredName NVARCHAR(50),
+        LogonName NVARCHAR(50),
+        PhoneNumber NVARCHAR(20),
+        FaxNumber NVARCHAR(20),
+        EmailAddres NVARCHAR(256)
+);
+CREATE TABLE Orders_Stage(
+	OrderDate DATE,
+	Quantity INT,
+	UnitPrice DECIMAL(18,2),
+	TaxRate DECIMAL(18,3),
+	CustomerName NVARCHAR(100),
+	CityName NVARCHAR(50),
+	StateProvinceName NVARCHAR(50), 
+	CountryName NVARCHAR(60),
+	StockItemName NVARCHAR(100),
+	LogonName NVARCHAR(50)
+);
+GO
+/*Procedures */
+CREATE PROCEDURE dbo.Customers_Extract
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+
+    TRUNCATE TABLE dbo.Customers_Stage;
+    
+	WITH CityDetails AS (
+        SELECT ci.CityID,
+               ci.CityName,
+               sp.StateProvinceCode,
+               sp.StateProvinceName,
+               co.CountryName,
+               co.FormalName
+        FROM WideWorldImporters.Application.Cities ci
+        LEFT JOIN WideWorldImporters.Application.StateProvinces sp
+            ON ci.StateProvinceID = sp.StateProvinceID
+        LEFT JOIN WideWorldImporters.Application.Countries co
+            ON sp.CountryID = co.CountryID ) 
+    INSERT INTO dbo.Customers_Stage (
+        CustomerName,
+        CustomerCategoryName,
+        DeliveryCityName,
+        DeliveryStateProvinceCode,
+        DeliveryStateProvinceName,
+        DeliveryCountryName,
+        DeliveryFormalName,
+        PostalCityName,
+        PostalStateProvinceCode,
+        PostalStateProvinceName,
+        PostalCountryName,
+        PostalFormalName )
+    SELECT cust.CustomerName,
+           cat.CustomerCategoryName,
+           dc.CityName,
+           dc.StateProvinceCode,
+           dc.StateProvinceName,
+           dc.CountryName,
+           dc.FormalName,
+           pc.CityName,
+           pc.StateProvinceCode,
+           pc.StateProvinceName,
+           pc.CountryName,
+           pc.FormalName
+    FROM WideWorldImporters.Sales.Customers cust
+    LEFT JOIN WideWorldImporters.Sales.CustomerCategories cat
+        ON cust.CustomerCategoryID = cat.CustomerCategoryID
+    LEFT JOIN CityDetails dc
+        ON cust.DeliveryCityID = dc.CityID
+    LEFT JOIN CityDetails pc
+        ON cust.PostalCityID = pc.CityID;
+    SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END;
+GO
+--TEST
+EXEC dbo.Customers_Extract ;
+GO
+SELECT * FROM dbo.Customers_Stage;
+GO
+
+CREATE PROCEDURE dbo.Products_Extract
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+
+    TRUNCATE TABLE dbo.Products_Stage;
+    
+    INSERT INTO dbo.Products_Stage(
+        ProductName ,
+        ProductBrand,
+        ProductSize ,
+        ProductColour)
+		SELECT stoi.StockItemName ,
+        colr.ColorName ,
+        stoi.Brand,
+        stoi.Size
+    FROM WideWorldImporters.Warehouse.StockItems stoi
+    LEFT JOIN WideWorldImporters.Warehouse.Colors colr
+        ON stoi.ColorID = colr.ColorID
+   
+    SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END;
+GO
+-- TEST
+EXEC dbo.Products_Extract;
+SELECT * FROM dbo.Products_Stage;
+GO
+
+CREATE PROCEDURE dbo.Salesperson_Extract
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+    TRUNCATE TABLE dbo.SalesPerson_Stage;
+    
+    INSERT INTO dbo.SalesPerson_Stage(
+		FullName,
+		PreferredName,
+		LogonName,
+		PhoneNumber,
+		FaxNumber,
+		EmailAddres
+		)
+		SELECT  p.FullName,
+        p.PreferredName, 
+        p.LogonName,
+        p.PhoneNumber,
+        p.FaxNumber,
+        p.EmailAddress
+    FROM WideWorldImporters.Application.People p
+    WHERE IsSalesPerson = 1;
+
+	SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+	END;
+END;
+GO
+
+--TEST
+EXEC dbo.Salesperson_Extract;
+SELECT * FROM dbo.Salesperson_Stage;
+GO
+
+CREATE PROCEDURE dbo.Orders_Extract
+	@OrderDate DATE
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+
+    TRUNCATE TABLE dbo.Orders_Stage;
+    
+    INSERT INTO dbo.Orders_Stage(
+        OrderDate ,
+	Quantity ,
+	UnitPrice ,
+	TaxRate,
+	CustomerName,
+	CityName,
+	StateProvinceName, 
+	CountryName ,
+	StockItemName ,
+	LogonName )
+		SELECT 
+	O.OrderDate,
+	OL.Quantity,
+	OL.UnitPrice,
+	OL.TaxRate,
+	C.CustomerName,
+	CN.CityName ,
+	SP.StateProvinceName, 
+	CS.CountryName ,
+	SI.StockItemName,
+	Pe.LogonName
+	FROM WideWorldImporters.Application.People Pe 
+	LEFT JOIN WideWorldImporters.Warehouse.StockItems SI
+		ON Pe.PersonID = SI.LastEditedBy
+    LEFT JOIN WideWorldImporters.Sales.OrderLines OL
+        ON SI.StockItemID= OL.StockItemID
+		LEFT JOIN WideWorldImporters.Sales.Orders O
+        ON OL.OrderID = O.OrderID
+		LEFT JOIN WideWorldImporters.Sales.Customers C
+        ON C.CustomerID = O.CustomerID
+		LEFT JOIN WideWorldImporters.Application.Cities CN
+        ON CN.CityID = C.DeliveryCityID
+		LEFT JOIN WideWorldImporters.Application.StateProvinces SP
+        ON CN.StateProvinceID = SP.StateProvinceID
+		LEFT JOIN WideWorldImporters.Application.Countries CS
+		ON SP.CountryID = CS.CountryID
+		WHERE @OrderDate = O.OrderDate;
+   
+    SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END;
+GO
+
+EXEC dbo.Orders_Extract '2013-01-01';
+SELECT * FROM Orders_Stage;
+GO
